@@ -1,7 +1,7 @@
 import { MessageSquare, Search, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useEffect, useState } from "react";
-
+import NeepcoLogo from "/public/logo/neepcologo.png"
 const RECENT_CHATS_KEY = "recentChats";
 type RecentChat = { id: string; title: string };
 
@@ -31,7 +31,7 @@ const Sidebar = () => {
     <div className="w-64 bg-custom-white h-screen flex flex-col p-4 border-r border-custom-blue/20">
       {/* Logo */}
       <div className="flex items-center justify-center mb-8">
-        <img src="public/logo/neepcologo.png" alt="NEEPCO Logo" className="w-12 h-12 rounded-lg" />
+        <img src={NeepcoLogo} alt="NEEPCO Logo" className="w-12 h-12 rounded-lg" />
         
       </div>
 
