@@ -5,7 +5,13 @@ import NeepcoLogo from "/public/logo/neepcologo.png"
 
 const RECENT_CHATS_KEY = "recentChats";
 type RecentChat = { id: string; title: string; messages: Message[] };
-type Message = { sender: 'user' | 'bot'; text: string };
+type Message = { 
+  sender: 'user' | 'bot'; 
+  text: string; 
+  requestId?: string; 
+  context?: string;
+  feedbackGiven?: boolean;
+};
 
 interface SidebarProps {
   isOpen: boolean;
@@ -19,7 +25,7 @@ interface SidebarProps {
 const Sidebar = ({ isOpen, onClose, onToggle, onSelectChat, onNewChat, currentChatId }: SidebarProps) => {
   const [recentChats, setRecentChats] = useState<RecentChat[]>([]);
 
-  // Load chats from sessionStorage (cleared when tab closes)
+  // Load chats from sessionStorage
   useEffect(() => {
     const stored = sessionStorage.getItem(RECENT_CHATS_KEY);
     if (stored) {
@@ -32,30 +38,26 @@ const Sidebar = ({ isOpen, onClose, onToggle, onSelectChat, onNewChat, currentCh
       }
     }
 
-    // Clear sessionStorage when tab/window is closed
     const handleBeforeUnload = () => {
       sessionStorage.removeItem(RECENT_CHATS_KEY);
     };
 
     const handleVisibilityChange = () => {
-      // Clear when tab becomes hidden (user switches tabs)
       if (document.hidden) {
         sessionStorage.removeItem(RECENT_CHATS_KEY);
       }
     };
 
-    // Add event listeners
     window.addEventListener('beforeunload', handleBeforeUnload);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    // Cleanup event listeners
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 
-  // Listen for sessionStorage changes to sync across components
+  // Listen for sessionStorage changes
   useEffect(() => {
     const handleStorageChange = () => {
       const stored = sessionStorage.getItem(RECENT_CHATS_KEY);
@@ -71,9 +73,7 @@ const Sidebar = ({ isOpen, onClose, onToggle, onSelectChat, onNewChat, currentCh
       }
     };
 
-    // Check for changes every second
     const interval = setInterval(handleStorageChange, 1000);
-    
     return () => clearInterval(interval);
   }, []);
 
