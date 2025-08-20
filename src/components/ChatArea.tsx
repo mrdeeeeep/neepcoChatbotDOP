@@ -12,9 +12,11 @@ type Message = { sender: 'user' | 'bot'; text: string };
 
 interface ChatAreaProps {
   onToggleSidebar: () => void;
+  selectedChat: RecentChat | null;
+  onChatUpdate: (chatId: string, messages: Message[]) => void;
 }
 
-const ChatArea = ({ onToggleSidebar }: ChatAreaProps) => {
+const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps) => {
   const suggestions = [
     "Help me understand delegation procedures",
     "What are the approval limits for different roles?",
@@ -23,7 +25,6 @@ const ChatArea = ({ onToggleSidebar }: ChatAreaProps) => {
   ];
 
   const [input, setInput] = useState("");
-  const [showChat, setShowChat] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,39 +32,80 @@ const ChatArea = ({ onToggleSidebar }: ChatAreaProps) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Load last chat on mount
+  // Clear session storage when component mounts (fresh session)
   useEffect(() => {
-    const stored = localStorage.getItem(RECENT_CHATS_KEY);
-    if (stored) {
-      const chats: RecentChat[] = JSON.parse(stored);
-      if (chats.length > 0) {
-        setMessages(chats[chats.length - 1].messages);
-        setChatId(chats[chats.length - 1].id);
-        setShowChat(true);
+    // Optional: Clear on fresh load, uncomment if needed
+    // sessionStorage.removeItem(RECENT_CHATS_KEY);
+
+    // Clear sessionStorage when tab/window is closed
+    const handleBeforeUnload = () => {
+      sessionStorage.clear(); // Clear all session data
+    };
+
+    const handleVisibilityChange = () => {
+      // Optional: Clear when tab becomes hidden (user switches tabs)
+      if (document.hidden) {
+        sessionStorage.removeItem(RECENT_CHATS_KEY);
       }
-    }
+    };
+
+    // Add event listeners
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Cleanup event listeners
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
+
+  // Load selected chat
+  useEffect(() => {
+    if (selectedChat) {
+      setMessages(selectedChat.messages);
+      setChatId(selectedChat.id);
+    }
+  }, [selectedChat]);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
-  // Save chat to localStorage whenever messages change
-  useEffect(() => {
-    if (!chatId) return;
-    const stored = localStorage.getItem(RECENT_CHATS_KEY);
-    let chats: RecentChat[] = stored ? JSON.parse(stored) : [];
-    const idx = chats.findIndex(c => c.id === chatId);
-    if (idx !== -1) {
-      chats[idx].messages = messages;
-    } else {
-      chats.push({ id: chatId, title: messages[0]?.text?.slice(0, 30) || 'New Chat', messages });
-    }
-    localStorage.setItem(RECENT_CHATS_KEY, JSON.stringify(chats));
-  }, [messages, chatId]);
+  // Save chat to sessionStorage whenever messages change
+  // Save chat to sessionStorage whenever messages change
+useEffect(() => {
+  if (!chatId || messages.length === 0) return;
+  
+  const stored = sessionStorage.getItem(RECENT_CHATS_KEY);
+  let chats: RecentChat[] = stored ? JSON.parse(stored) : [];
+  const idx = chats.findIndex(c => c.id === chatId);
+  
+  // Fix: Add proper type safety checks
+  const firstMessage = messages;
+  const title = (firstMessage && typeof firstMessage === 'object' && 'text' in firstMessage && typeof firstMessage.text === 'string')
+    ? firstMessage.text.slice(0, 50) + (firstMessage.text.length > 50 ? '...' : '')
+    : 'New Chat';
 
-  // Animation variants for chat view
+  const updatedChat = {
+    id: chatId,
+    title,
+    messages
+  };
+
+  if (idx !== -1) {
+    chats[idx] = updatedChat;
+  } else {
+    chats.push(updatedChat);
+  }
+  
+  sessionStorage.setItem(RECENT_CHATS_KEY, JSON.stringify(chats));
+  onChatUpdate(chatId, messages);
+}, [messages, chatId, onChatUpdate]);
+
+
+  // Animation variants
   const chatVariants = {
     hidden: { opacity: 0, y: 80, scale: 0.95, filter: "blur(8px)" },
     visible: {
@@ -87,28 +129,34 @@ const ChatArea = ({ onToggleSidebar }: ChatAreaProps) => {
     }
   };
 
-  // Handle input submit (Enter or Send)
+  // Handle input submit
   const handleSubmit = async (e?: React.FormEvent | React.KeyboardEvent) => {
     if (e) e.preventDefault();
     if (!input.trim()) return;
-    setShowChat(true);
+
     let newChatId = chatId;
     if (!chatId) {
       newChatId = Date.now().toString();
       setChatId(newChatId);
     }
+
     const userMessage = { sender: 'user' as const, text: input };
-    setMessages((prev) => [...prev, userMessage]);
+    const newMessages = [...messages, userMessage];
+    setMessages(newMessages);
     setLoading(true);
     setError(null);
     setInput("");
+    
     setTimeout(() => inputRef.current?.focus(), 200);
+    
     try {
       const response = await askQuestion({ question: input });
-      setMessages((prev) => [...prev, { sender: 'bot', text: response }]);
+      const finalMessages = [...newMessages, { sender: 'bot' as const, text: response }];
+      setMessages(finalMessages);
     } catch (err: any) {
       setError("Failed to get response. Please try again.");
-      setMessages((prev) => [...prev, { sender: 'bot', text: "Sorry, I couldn't get a response." }]);
+      const errorMessages = [...newMessages, { sender: 'bot' as const, text: "Sorry, I couldn't get a response." }];
+      setMessages(errorMessages);
     } finally {
       setLoading(false);
     }
@@ -116,28 +164,34 @@ const ChatArea = ({ onToggleSidebar }: ChatAreaProps) => {
 
   // Handle suggestion click
   const handleSuggestion = async (s: string) => {
-    setInput("");
-    setShowChat(true);
     let newChatId = chatId;
     if (!chatId) {
       newChatId = Date.now().toString();
       setChatId(newChatId);
     }
+
     const userMessage = { sender: 'user' as const, text: s };
-    setMessages((prev) => [...prev, userMessage]);
+    const newMessages = [...messages, userMessage];
+    setMessages(newMessages);
     setLoading(true);
     setError(null);
+    
     setTimeout(() => inputRef.current?.focus(), 200);
+    
     try {
       const response = await askQuestion({ question: s });
-      setMessages((prev) => [...prev, { sender: 'bot', text: response }]);
+      const finalMessages = [...newMessages, { sender: 'bot' as const, text: response }];
+      setMessages(finalMessages);
     } catch (err: any) {
       setError("Failed to get response. Please try again.");
-      setMessages((prev) => [...prev, { sender: 'bot', text: "Sorry, I couldn't get a response." }]);
+      const errorMessages = [...newMessages, { sender: 'bot' as const, text: "Sorry, I couldn't get a response." }];
+      setMessages(errorMessages);
     } finally {
       setLoading(false);
     }
   };
+
+  const showChat = messages.length > 0 || loading;
 
   return (
     <div className="flex-1 flex flex-col h-full bg-custom-white relative">
@@ -195,7 +249,6 @@ const ChatArea = ({ onToggleSidebar }: ChatAreaProps) => {
 
             {/* Bottom Section with Input */}
             <div className="flex flex-col items-center p-4 md:p-6 space-y-4">
-              {/* Chat Input */}
               <form
                 className="w-full max-w-2xl bg-custom-white rounded-2xl p-3 md:p-4 shadow-lg border border-custom-blue/20"
                 onSubmit={handleSubmit}
@@ -228,11 +281,8 @@ const ChatArea = ({ onToggleSidebar }: ChatAreaProps) => {
                 </div>
               </form>
 
-              {/* Attach Section */}
               <div className="flex items-center justify-center">
                 <Button variant="ghost" className="text-custom-blue/70 hover:text-custom-red hover:bg-custom-red/10 font-quicksand text-sm md:text-base">
-                  <Paperclip className="w-4 h-4 mr-2" />
-                  Attach
                 </Button>
               </div>
             </div>
@@ -240,7 +290,7 @@ const ChatArea = ({ onToggleSidebar }: ChatAreaProps) => {
         )}
       </AnimatePresence>
 
-      {/* Chat View with Animation */}
+      {/* Chat View */}
       <AnimatePresence>
         {showChat && (
           <motion.div
@@ -254,7 +304,6 @@ const ChatArea = ({ onToggleSidebar }: ChatAreaProps) => {
             {/* Chat Header */}
             <div className="flex items-center justify-between p-4 md:p-6 border-b border-custom-blue/10 bg-custom-white/80 backdrop-blur-md flex-shrink-0">
               <div className="flex items-center gap-2">
-                {/* Mobile Menu Button */}
                 <Button
                   variant="ghost"
                   size="sm"
@@ -269,7 +318,10 @@ const ChatArea = ({ onToggleSidebar }: ChatAreaProps) => {
               <Button
                 variant="ghost"
                 className="text-custom-blue/50 hover:text-custom-red text-sm md:text-base"
-                onClick={() => setShowChat(false)}
+                onClick={() => {
+                  setMessages([]);
+                  setChatId(null);
+                }}
               >
                 Close
               </Button>
@@ -277,31 +329,25 @@ const ChatArea = ({ onToggleSidebar }: ChatAreaProps) => {
 
             {/* Chat Messages Container */}
             <div className="flex-1 overflow-y-auto p-4 md:p-6 min-h-0">
-              <div className="flex flex-col gap-4 md:gap-6 min-h-full">
-                {messages.length === 0 ? (
-                  <div className="text-custom-blue/60 font-quicksand text-center flex-1 flex items-center justify-center">
-                    No messages yet.
-                  </div>
-                ) : (
-                  messages.map((msg, idx) => (
-                    <motion.div
-                      key={idx}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: idx * 0.07, type: 'spring', stiffness: 300, damping: 30 }}
+              <div className="flex flex-col gap-4 md:gap-6">
+                {messages.map((msg, idx) => (
+                  <motion.div
+                    key={idx}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.07, type: 'spring', stiffness: 300, damping: 30 }}
+                  >
+                    <div
+                      className={`rounded-xl px-3 md:px-4 py-2 md:py-3 max-w-[90%] md:max-w-[80%] font-quicksand shadow-md text-sm md:text-base ${
+                        msg.sender === 'user'
+                          ? 'bg-custom-blue text-white ml-auto'
+                          : 'bg-custom-white text-custom-blue mr-auto border border-custom-blue/10'
+                      }`}
                     >
-                      <div
-                        className={`rounded-xl px-3 md:px-4 py-2 md:py-3 max-w-[90%] md:max-w-[80%] font-quicksand shadow-md text-sm md:text-base ${
-                          msg.sender === 'user'
-                            ? 'bg-custom-blue text-white ml-auto'
-                            : 'bg-custom-white text-custom-blue mr-auto border border-custom-blue/10'
-                        }`}
-                      >
-                        {msg.text}
-                      </div>
-                    </motion.div>
-                  ))
-                )}
+                      {msg.text}
+                    </div>
+                  </motion.div>
+                ))}
                 {loading && (
                   <motion.div
                     initial={{ opacity: 0, y: 20 }}
@@ -319,7 +365,7 @@ const ChatArea = ({ onToggleSidebar }: ChatAreaProps) => {
               </div>
             </div>
 
-            {/* Chat Input at Bottom - Fixed Position */}
+            {/* Chat Input at Bottom */}
             <div className="flex-shrink-0 p-4 md:p-6 bg-custom-white border-t border-custom-blue/10">
               <form
                 className="w-full max-w-4xl mx-auto bg-custom-white rounded-2xl p-3 md:p-4 shadow-lg border border-custom-blue/20"

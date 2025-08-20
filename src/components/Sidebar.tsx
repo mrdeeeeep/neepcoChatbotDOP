@@ -4,35 +4,88 @@ import { useEffect, useState } from "react";
 import NeepcoLogo from "/public/logo/neepcologo.png"
 
 const RECENT_CHATS_KEY = "recentChats";
-type RecentChat = { id: string; title: string };
+type RecentChat = { id: string; title: string; messages: Message[] };
+type Message = { sender: 'user' | 'bot'; text: string };
 
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
   onToggle: () => void;
+  onSelectChat: (chat: RecentChat) => void;
+  onNewChat: () => void;
+  currentChatId: string | null;
 }
 
-const Sidebar = ({ isOpen, onClose, onToggle }: SidebarProps) => {
+const Sidebar = ({ isOpen, onClose, onToggle, onSelectChat, onNewChat, currentChatId }: SidebarProps) => {
   const [recentChats, setRecentChats] = useState<RecentChat[]>([]);
-  const [selectedChat, setSelectedChat] = useState<RecentChat | null>(null);
 
+  // Load chats from sessionStorage (cleared when tab closes)
   useEffect(() => {
-    const stored = localStorage.getItem(RECENT_CHATS_KEY);
-    if (stored) setRecentChats(JSON.parse(stored));
+    const stored = sessionStorage.getItem(RECENT_CHATS_KEY);
+    if (stored) {
+      try {
+        const chats = JSON.parse(stored);
+        setRecentChats(chats);
+      } catch (error) {
+        console.error('Error parsing stored chats:', error);
+        setRecentChats([]);
+      }
+    }
+
+    // Clear sessionStorage when tab/window is closed
+    const handleBeforeUnload = () => {
+      sessionStorage.removeItem(RECENT_CHATS_KEY);
+    };
+
+    const handleVisibilityChange = () => {
+      // Clear when tab becomes hidden (user switches tabs)
+      if (document.hidden) {
+        sessionStorage.removeItem(RECENT_CHATS_KEY);
+      }
+    };
+
+    // Add event listeners
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Cleanup event listeners
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
+  // Listen for sessionStorage changes to sync across components
   useEffect(() => {
-    localStorage.setItem(RECENT_CHATS_KEY, JSON.stringify(recentChats));
-  }, [recentChats]);
+    const handleStorageChange = () => {
+      const stored = sessionStorage.getItem(RECENT_CHATS_KEY);
+      if (stored) {
+        try {
+          const chats = JSON.parse(stored);
+          setRecentChats(chats);
+        } catch (error) {
+          console.error('Error parsing stored chats:', error);
+        }
+      } else {
+        setRecentChats([]);
+      }
+    };
 
-  const addNewChat = (title: string) => {
-    const newChat: RecentChat = { id: Date.now().toString(), title };
-    setRecentChats((prevChats) => [...prevChats, newChat]);
+    // Check for changes every second
+    const interval = setInterval(handleStorageChange, 1000);
+    
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleSelectChat = (chat: RecentChat) => {
+    onSelectChat(chat);
+    if (window.innerWidth < 768) {
+      onClose();
+    }
   };
 
-  const selectChat = (chat: RecentChat) => {
-    setSelectedChat(chat);
-    // Close sidebar on mobile when chat is selected
+  const handleNewChat = () => {
+    onNewChat();
     if (window.innerWidth < 768) {
       onClose();
     }
@@ -79,7 +132,11 @@ const Sidebar = ({ isOpen, onClose, onToggle }: SidebarProps) => {
 
         {/* Main Actions */}
         <div className="space-y-2 mb-6 md:mb-8">
-          <Button className="w-full justify-start bg-custom-red hover:bg-custom-blue text-custom-white font-quicksand font-medium text-sm md:text-base" size="sm">
+          <Button 
+            onClick={handleNewChat}
+            className="w-full justify-start bg-custom-red hover:bg-custom-blue text-custom-white font-quicksand font-medium text-sm md:text-base" 
+            size="sm"
+          >
             <MessageSquare className="w-4 h-4 mr-3" />
             New Chat
           </Button>
@@ -92,20 +149,22 @@ const Sidebar = ({ isOpen, onClose, onToggle }: SidebarProps) => {
 
         {/* Recent Chats */}
         <div className="flex-1 overflow-y-auto">
-          <h3 className="text-sm font-quicksand font-medium text-custom-blue/70 mb-3">Recent Chats</h3>
+          <h3 className="text-sm font-quicksand font-medium text-custom-blue/70 mb-3">Recent Chats (Session Only)</h3>
           <div className="space-y-1">
             {recentChats.length === 0 ? (
-              <div className="text-custom-blue/40 text-xs font-quicksand px-2 py-4">No recent chats yet.</div>
+              <div className="text-custom-blue/40 text-xs font-quicksand px-2 py-4">No recent chats in this session.</div>
             ) : (
               recentChats.map(chat => (
                 <Button
                   key={chat.id}
                   variant="ghost"
-                  className={`w-full justify-start text-custom-blue hover:text-custom-red hover:bg-custom-blue/10 font-quicksand text-xs md:text-sm h-auto py-2 ${selectedChat?.id === chat.id ? 'bg-custom-blue/10' : ''}`}
-                  onClick={() => selectChat(chat)}
+                  className={`w-full justify-start text-custom-blue hover:text-custom-red hover:bg-custom-blue/10 font-quicksand text-xs md:text-sm h-auto py-2 ${
+                    currentChatId === chat.id ? 'bg-custom-blue/10 text-custom-red' : ''
+                  }`}
+                  onClick={() => handleSelectChat(chat)}
                 >
                   <FileText className="w-4 h-4 mr-3 flex-shrink-0" />
-                  <span className="truncate">{chat.title}</span>
+                  <span className="truncate text-left">{chat.title}</span>
                 </Button>
               ))
             )}
