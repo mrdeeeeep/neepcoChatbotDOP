@@ -9,10 +9,10 @@ import { askQuestion, submitFeedback, checkRequestStatus, QueueStatus } from "..
 const RECENT_CHATS_KEY = "recentChats";
 
 type RecentChat = { id: string; title: string; messages: Message[] };
-type Message = { 
-  sender: 'user' | 'bot'; 
-  text: string; 
-  requestId?: string; 
+type Message = {
+  sender: 'user' | 'bot';
+  text: string;
+  requestId?: string;
   context?: string;
   feedbackGiven?: boolean;
 };
@@ -39,50 +39,35 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
   const [showFeedback, setShowFeedback] = useState<{ [key: number]: boolean }>({});
   const [feedbackData, setFeedbackData] = useState<{ [key: number]: { feedback: string; comment: string } }>({});
   const [submittingFeedback, setSubmittingFeedback] = useState<{ [key: number]: boolean }>({});
-  
+
   // Queue-related state
   const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
-  const [currentRequestId, setCurrentRequestId] = useState<string | null>(null);
-  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
-  
+
+  // ✅ Support multiple in-flight request polls without aborting earlier ones
+  const pollersRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
+  const pendingIdsRef = useRef<Set<string>>(new Set());
+  const [pendingCount, setPendingCount] = useState(0); // derived from pendingIdsRef for UI re-render
+
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Clear session storage and polling when component mounts/unmounts
+  // Clear session storage when tab closes
   useEffect(() => {
     const handleBeforeUnload = () => {
       sessionStorage.clear();
-      // Clear any active polling
-      if (pollingInterval) {
-        clearInterval(pollingInterval);
-      }
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        sessionStorage.removeItem(RECENT_CHATS_KEY);
-        // Clear polling when tab becomes hidden
-        if (pollingInterval) {
-          clearInterval(pollingInterval);
-          setPollingInterval(null);
-          setCurrentRequestId(null);
-          setQueueStatus(null);
-          setLoading(false);
-        }
-      }
+      // do NOT clear pollers here; the page is unloading anyway
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      if (pollingInterval) {
-        clearInterval(pollingInterval);
-      }
+      // Cleanup any remaining pollers
+      pollersRef.current.forEach((intId) => clearInterval(intId));
+      pollersRef.current.clear();
+      pendingIdsRef.current.clear();
+      setPendingCount(0);
     };
-  }, [pollingInterval]);
+  }, []);
 
   // Load selected chat
   useEffect(() => {
@@ -95,16 +80,16 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
   // Auto-scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, loading, queueStatus]);
+  }, [messages, queueStatus]);
 
   // Save chat to sessionStorage whenever messages change
   useEffect(() => {
     if (!chatId || messages.length === 0) return;
-    
+
     const stored = sessionStorage.getItem(RECENT_CHATS_KEY);
     let chats: RecentChat[] = stored ? JSON.parse(stored) : [];
     const idx = chats.findIndex(c => c.id === chatId);
-    
+
     const firstMessage = messages[0];
     const title = firstMessage?.text
       ? firstMessage.text.slice(0, 50) + (firstMessage.text.length > 50 ? '...' : '')
@@ -121,16 +106,35 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
     } else {
       chats.push(updatedChat);
     }
-    
+
     sessionStorage.setItem(RECENT_CHATS_KEY, JSON.stringify(chats));
     onChatUpdate(chatId, messages);
   }, [messages, chatId, onChatUpdate]);
 
-  // Polling function for checking request status
+  // --- Polling helpers for multiple IDs ---
+  const addPendingId = (id: string) => {
+    pendingIdsRef.current.add(id);
+    setPendingCount(pendingIdsRef.current.size);
+  };
+
+  const removePendingId = (id: string) => {
+    pendingIdsRef.current.delete(id);
+    setPendingCount(pendingIdsRef.current.size);
+  };
+
+  const clearPoller = (id: string) => {
+    const intId = pollersRef.current.get(id);
+    if (intId) {
+      clearInterval(intId);
+      pollersRef.current.delete(id);
+    }
+  };
+
+  // Polling function for checking request status (per requestId)
   const pollRequestStatus = async (requestId: string) => {
     try {
       const statusResponse = await checkRequestStatus(requestId);
-      
+
       const newQueueStatus: QueueStatus = {
         status: statusResponse.status,
         message: statusResponse.message,
@@ -148,18 +152,13 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
         };
       }
 
+      // For UI we show the most recent status message
       setQueueStatus(newQueueStatus);
 
-      // Stop polling if completed or failed
+      // Stop polling if completed or failed — ONLY for this requestId
       if (statusResponse.status === 'completed' || statusResponse.status === 'failed') {
-        // Clear polling first to prevent multiple executions
-        if (pollingInterval) {
-          clearInterval(pollingInterval);
-          setPollingInterval(null);
-        }
-        
-        setLoading(false);
-        setCurrentRequestId(null);
+        clearPoller(requestId);
+        removePendingId(requestId);
 
         if (statusResponse.status === 'completed' && statusResponse.result) {
           // Add bot response to messages
@@ -170,82 +169,59 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
             context: statusResponse.result.context_used,
             feedbackGiven: false
           };
-          
-          // Use functional update to avoid stale state
+
           setMessages(prev => {
-            // Check if this message was already added (prevent duplicates)
             const lastMessage = prev[prev.length - 1];
             if (lastMessage && lastMessage.sender === 'bot' && lastMessage.requestId === statusResponse.result?.request_id) {
-              return prev; // Don't add duplicate
+              return prev; // avoid duplicate
             }
             return [...prev, botMessage];
           });
         } else if (statusResponse.status === 'failed') {
-          // Add error message
-          const errorMessage: Message = {
-            sender: 'bot',
-            text: statusResponse.error || "Sorry, an error occurred while processing your request."
-          };
-          
+          // Add error message (dedupe similar errors)
           setMessages(prev => {
-            // Check if error message was already added
-            const lastMessage = prev[prev.length - 1];
-            if (lastMessage && lastMessage.sender === 'bot' && lastMessage.text === errorMessage.text) {
-              return prev; // Don't add duplicate
-            }
-            return [...prev, errorMessage];
+            const last = prev[prev.length - 1];
+            const msgText = statusResponse.error || "Sorry, an error occurred while processing your request.";
+            if (last && last.sender === 'bot' && last.text === msgText) return prev;
+            return [...prev, { sender: 'bot', text: msgText }];
           });
         }
 
-        // Clear queue status after a delay
+        // Clear queue status after a brief delay if nothing else is pending
         setTimeout(() => {
-          setQueueStatus(null);
+          if (pendingIdsRef.current.size === 0) setQueueStatus(null);
         }, 2000);
-        
-        // Return true to indicate polling should stop
-        return true;
-      }
-      
-      // Return false to continue polling
-      return false;
 
+        return true; // stop for this id
+      }
+
+      return false; // continue polling
     } catch (error) {
       console.error('Error polling request status:', error);
-      // Continue polling on error, but update status
-      setQueueStatus(prev => prev ? {
-        ...prev,
-        message: "Connection issue while checking status. Retrying..."
-      } : null);
-      
-      // Return false to continue polling
+      // continue polling but update status message
+      setQueueStatus(prev => prev ? { ...prev, message: "Connection issue while checking status. Retrying..." } : null);
       return false;
     }
   };
 
-  // Start polling for request status
+  // Start polling for a specific requestId without cancelling others
   const startPolling = (requestId: string) => {
-    // Clear any existing interval first
-    if (pollingInterval) {
-      clearInterval(pollingInterval);
-      setPollingInterval(null);
-    }
-    
+    // Ensure we don't create duplicate intervals per id
+    clearPoller(requestId);
+    addPendingId(requestId);
+
     const interval = setInterval(async () => {
       const shouldStop = await pollRequestStatus(requestId);
-      if (shouldStop && interval) {
-        clearInterval(interval);
-        setPollingInterval(null);
+      if (shouldStop) {
+        clearPoller(requestId);
       }
-    }, 3000); // Poll every 3 seconds
-    
-    setPollingInterval(interval);
-    
-    // Poll immediately (but don't wait for it to complete)
-    pollRequestStatus(requestId).then(shouldStop => {
-      if (shouldStop && interval) {
-        clearInterval(interval);
-        setPollingInterval(null);
-      }
+    }, 3000);
+
+    pollersRef.current.set(requestId, interval);
+
+    // Kick off an immediate poll once
+    void pollRequestStatus(requestId).then((shouldStop) => {
+      if (shouldStop) clearPoller(requestId);
     });
   };
 
@@ -273,10 +249,24 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
     }
   };
 
+  // Get the closest previous user message for feedback linking (safer than idx-1)
+  const getLinkedUserMessage = (botIndex: number): Message | undefined => {
+    for (let i = botIndex - 1; i >= 0; i--) {
+      if (messages[i]?.sender === 'user') return messages[i];
+    }
+    return undefined;
+  };
+
   // Handle feedback submission
-  const handleFeedbackSubmit = async (messageIndex: number, botMessage: Message, userMessage: Message) => {
+  const handleFeedbackSubmit = async (messageIndex: number, botMessage: Message) => {
     const feedback = feedbackData[messageIndex];
     if (!feedback || !feedback.feedback) return;
+
+    const userMessage = getLinkedUserMessage(messageIndex);
+    if (!userMessage) {
+      alert('Could not determine the related question for this answer.');
+      return;
+    }
 
     setSubmittingFeedback(prev => ({ ...prev, [messageIndex]: true }));
 
@@ -291,16 +281,16 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
       });
 
       // Mark feedback as given
-      const updatedMessages = [...messages];
-      updatedMessages[messageIndex] = { ...updatedMessages[messageIndex], feedbackGiven: true };
-      setMessages(updatedMessages);
+      setMessages(prev => {
+        const updated = [...prev];
+        updated[messageIndex] = { ...updated[messageIndex], feedbackGiven: true };
+        return updated;
+      });
       setShowFeedback(prev => ({ ...prev, [messageIndex]: false }));
-      
-      // Clear feedback data
       setFeedbackData(prev => {
-        const newData = { ...prev };
-        delete newData[messageIndex];
-        return newData;
+        const nd = { ...prev };
+        delete nd[messageIndex];
+        return nd;
       });
 
     } catch (err) {
@@ -311,149 +301,86 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
     }
   };
 
-  // Handle input submit
-  const handleSubmit = async (e?: React.FormEvent | React.KeyboardEvent) => {
-    if (e) e.preventDefault();
-    if (!input.trim() || loading || currentRequestId) return;
-
+  // Submit helpers (shared for manual text and suggestions)
+  const enqueueQuestion = async (question: string) => {
     let newChatId = chatId;
     if (!chatId) {
       newChatId = Date.now().toString();
       setChatId(newChatId);
     }
 
-    const userMessage = { sender: 'user' as const, text: input };
+    const userMessage = { sender: 'user' as const, text: question };
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
     setLoading(true);
     setError(null);
-    const currentInput = input;
-    setInput("");
-    
+
+    // keep focus snappy
     setTimeout(() => inputRef.current?.focus(), 200);
-    
+
     try {
-      const queueResponse = await askQuestion({ question: currentInput });
-      
-      setCurrentRequestId(queueResponse.request_id);
-      
-      // Set initial queue status
+      const queueResponse = await askQuestion({ question });
+
+      // Track this requestId until it completes (do NOT replace others)
+      const reqId = queueResponse.request_id;
+
+      // Set initial queue status UI (last one wins visually)
       const initialStatus: QueueStatus = {
         status: queueResponse.status,
         message: queueResponse.message,
         queuePosition: queueResponse.queue_position,
         estimatedWaitTime: queueResponse.estimated_wait_time
       };
-      
       setQueueStatus(initialStatus);
-      
-      // Handle different queue responses
+
       if (queueResponse.status === 'queue_full') {
         setLoading(false);
-        setCurrentRequestId(null);
-        setError("Queue is full. Please try again later.");
-        
         // Remove the user message since request failed
         setMessages(prev => prev.slice(0, -1));
-        
-        // Clear queue status after delay
-        setTimeout(() => {
-          setQueueStatus(null);
-        }, 5000);
-        
-      } else if (queueResponse.status === 'processing') {
-        // Start polling immediately for processing requests
-        startPolling(queueResponse.request_id);
-        
-      } else if (queueResponse.status === 'queued') {
-        // Start polling for queued requests
-        startPolling(queueResponse.request_id);
+        setError("Queue is full. Please try again later.");
+        // clear status after a short delay (no pending)
+        setTimeout(() => setQueueStatus(null), 4000);
+        return;
       }
-      
+
+      // begin polling for this id
+      startPolling(reqId);
+
     } catch (err: any) {
       console.error('API Error:', err);
       setLoading(false);
-      setCurrentRequestId(null);
       setQueueStatus(null);
       setError("Failed to get response. Please try again.");
-      
-      const errorMessages = [...newMessages, { 
-        sender: 'bot' as const, 
-        text: "Sorry, I'm having trouble connecting to the server. Please try again in a moment." 
-      }];
-      setMessages(errorMessages);
+
+      // Add a single deduplicated bot error message
+      setMessages(prev => {
+        const last = prev[prev.length - 1];
+        const msgText = "Sorry, I'm having trouble connecting to the server. Please try again in a moment.";
+        if (last && last.sender === 'bot' && last.text === msgText) return prev;
+        return [...prev, { sender: 'bot' as const, text: msgText }];
+      });
+    } finally {
+      // If at least one request is pending, keep input disabled; otherwise allow typing again
+      setLoading(false);
     }
+  };
+
+  // Handle input submit
+  const handleSubmit = async (e?: React.FormEvent | React.KeyboardEvent) => {
+    if (e) e.preventDefault();
+    if (!input.trim()) return;
+    // Block if any requests are still pending
+    if (pendingIdsRef.current.size > 0) return;
+
+    const currentInput = input;
+    setInput("");
+    await enqueueQuestion(currentInput);
   };
 
   // Handle suggestion click
   const handleSuggestion = async (s: string) => {
-    if (loading || currentRequestId) return;
-    
-    let newChatId = chatId;
-    if (!chatId) {
-      newChatId = Date.now().toString();
-      setChatId(newChatId);
-    }
-
-    const userMessage = { sender: 'user' as const, text: s };
-    const newMessages = [...messages, userMessage];
-    setMessages(newMessages);
-    setLoading(true);
-    setError(null);
-    
-    setTimeout(() => inputRef.current?.focus(), 200);
-    
-    try {
-      const queueResponse = await askQuestion({ question: s });
-      
-      setCurrentRequestId(queueResponse.request_id);
-      
-      // Set initial queue status
-      const initialStatus: QueueStatus = {
-        status: queueResponse.status,
-        message: queueResponse.message,
-        queuePosition: queueResponse.queue_position,
-        estimatedWaitTime: queueResponse.estimated_wait_time
-      };
-      
-      setQueueStatus(initialStatus);
-      
-      // Handle different queue responses
-      if (queueResponse.status === 'queue_full') {
-        setLoading(false);
-        setCurrentRequestId(null);
-        setError("Queue is full. Please try again later.");
-        
-        // Remove the user message since request failed
-        setMessages(prev => prev.slice(0, -1));
-        
-        // Clear queue status after delay
-        setTimeout(() => {
-          setQueueStatus(null);
-        }, 5000);
-        
-      } else if (queueResponse.status === 'processing') {
-        // Start polling immediately for processing requests
-        startPolling(queueResponse.request_id);
-        
-      } else if (queueResponse.status === 'queued') {
-        // Start polling for queued requests
-        startPolling(queueResponse.request_id);
-      }
-      
-    } catch (err: any) {
-      console.error('API Error:', err);
-      setLoading(false);
-      setCurrentRequestId(null);
-      setQueueStatus(null);
-      setError("Failed to get response. Please try again.");
-      
-      const errorMessages = [...newMessages, { 
-        sender: 'bot' as const, 
-        text: "Sorry, I'm having trouble connecting to the server. Please try again in a moment." 
-      }];
-      setMessages(errorMessages);
-    }
+    if (pendingIdsRef.current.size > 0) return;
+    await enqueueQuestion(s);
   };
 
   const formatBotMessage = (text: string) => {
@@ -462,8 +389,8 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
       .replace(/\n/g, '<br/>');
   };
 
-  const showChat = messages.length > 0 || loading || queueStatus;
-  const isInputDisabled = loading || currentRequestId !== null;
+  const showChat = messages.length > 0 || queueStatus !== null;
+  const isInputDisabled = loading || pendingCount > 0; // disable when any request is pending
 
   return (
     <div className="flex-1 flex flex-col h-full bg-gray-50 relative">
@@ -594,12 +521,12 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
                   setShowFeedback({});
                   setFeedbackData({});
                   setQueueStatus(null);
-                  setCurrentRequestId(null);
+                  // Clear all pollers/pending safely
+                  pollersRef.current.forEach((id) => clearInterval(id));
+                  pollersRef.current.clear();
+                  pendingIdsRef.current.clear();
+                  setPendingCount(0);
                   setLoading(false);
-                  if (pollingInterval) {
-                    clearInterval(pollingInterval);
-                    setPollingInterval(null);
-                  }
                 }}
               >
                 Close
@@ -626,7 +553,7 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
                         }`}
                       >
                         {msg.sender === 'bot' ? (
-                          <div 
+                          <div
                             className="whitespace-pre-wrap"
                             dangerouslySetInnerHTML={{
                               __html: formatBotMessage(msg.text)
@@ -647,9 +574,9 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
                                 size="sm"
                                 className="text-gray-500 hover:text-green-600 h-8 px-2"
                                 onClick={() => {
-                                  setFeedbackData(prev => ({ 
-                                    ...prev, 
-                                    [idx]: { feedback: 'positive', comment: '' } 
+                                  setFeedbackData(prev => ({
+                                    ...prev,
+                                    [idx]: { feedback: 'positive', comment: '' }
                                   }));
                                   setShowFeedback(prev => ({ ...prev, [idx]: true }));
                                 }}
@@ -661,9 +588,9 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
                                 size="sm"
                                 className="text-gray-500 hover:text-red-600 h-8 px-2"
                                 onClick={() => {
-                                  setFeedbackData(prev => ({ 
-                                    ...prev, 
-                                    [idx]: { feedback: 'negative', comment: '' } 
+                                  setFeedbackData(prev => ({
+                                    ...prev,
+                                    [idx]: { feedback: 'negative', comment: '' }
                                   }));
                                   setShowFeedback(prev => ({ ...prev, [idx]: true }));
                                 }}
@@ -675,9 +602,9 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
                                 size="sm"
                                 className="text-gray-500 hover:text-blue-600 h-8 px-2"
                                 onClick={() => {
-                                  setFeedbackData(prev => ({ 
-                                    ...prev, 
-                                    [idx]: { feedback: 'neutral', comment: '' } 
+                                  setFeedbackData(prev => ({
+                                    ...prev,
+                                    [idx]: { feedback: 'neutral', comment: '' }
                                   }));
                                   setShowFeedback(prev => ({ ...prev, [idx]: true }));
                                 }}
@@ -699,10 +626,10 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
                                         variant={feedbackData[idx]?.feedback === type ? "default" : "outline"}
                                         size="sm"
                                         className={`h-8 text-xs ${
-                                          feedbackData[idx]?.feedback === type 
-                                            ? type === 'positive' 
-                                              ? 'bg-green-600 hover:bg-green-700' 
-                                              : type === 'negative' 
+                                          feedbackData[idx]?.feedback === type
+                                            ? type === 'positive'
+                                              ? 'bg-green-600 hover:bg-green-700'
+                                              : type === 'negative'
                                               ? 'bg-red-600 hover:bg-red-700'
                                               : 'bg-blue-600 hover:bg-blue-700'
                                             : ''
@@ -722,7 +649,7 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
                                     ))}
                                   </div>
                                 </div>
-                                
+
                                 <div>
                                   <label className="block text-sm font-medium text-gray-700 mb-1">
                                     Additional Comments (Optional)
@@ -744,10 +671,7 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
                                   <Button
                                     size="sm"
                                     className="bg-custom-blue hover:bg-custom-red text-white"
-                                    onClick={() => {
-                                      const userMessage = messages[idx - 1]; // Previous message should be user message
-                                      handleFeedbackSubmit(idx, msg, userMessage);
-                                    }}
+                                    onClick={() => handleFeedbackSubmit(idx, msg)}
                                     disabled={submittingFeedback[idx] || !feedbackData[idx]?.feedback}
                                   >
                                     {submittingFeedback[idx] ? 'Submitting...' : 'Submit Feedback'}
@@ -782,7 +706,7 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
                       )}
                     </motion.div>
                   ))}
-                  
+
                   {/* Queue Status Display */}
                   {queueStatus && (
                     <motion.div
@@ -805,18 +729,18 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
                               <Users className="w-5 h-5 text-red-600 mt-0.5" />
                             ) : null}
                           </div>
-                          
+
                           <div className="flex-1">
                             <div className="font-medium mb-1">
                               {queueStatus.status === 'processing' && 'Processing your request...'}
                               {queueStatus.status === 'queued' && 'Request queued'}
                               {queueStatus.status === 'queue_full' && 'Queue full'}
                             </div>
-                            
+
                             <div className="text-sm text-blue-700">
                               {queueStatus.message}
                             </div>
-                            
+
                             {queueStatus.queuePosition && queueStatus.queuePosition > 0 && (
                               <div className="text-sm text-blue-600 mt-2 flex items-center space-x-4">
                                 <span>Position: #{queueStatus.queuePosition}</span>
@@ -830,26 +754,7 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
                       </div>
                     </motion.div>
                   )}
-                  
-                  {loading && !queueStatus && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="flex justify-start"
-                    >
-                      <div className="max-w-[75%] md:max-w-[70%] bg-white text-gray-600 rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm border border-gray-100 font-quicksand text-sm md:text-base italic">
-                        <div className="flex items-center space-x-2">
-                          <div className="flex space-x-1">
-                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                          </div>
-                          <span>Connecting...</span>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                  
+
                   {error && (
                     <div className="flex justify-center">
                       <div className="text-red-500 text-sm bg-red-50 px-3 py-2 rounded-lg border border-red-200">
