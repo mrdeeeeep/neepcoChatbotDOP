@@ -1,5 +1,3 @@
-// src/api/chatApi.ts
-
 /**
  * Defines the structure for the request sent to the chatbot API.
  */
@@ -16,6 +14,31 @@ export interface ChatResponse {
   question: string;
   context_used: string;
   answer: string;
+}
+
+/**
+ * Defines the structure of the queue response from the chatbot API.
+ */
+export interface QueueResponse {
+  request_id: string;
+  question: string;
+  status: 'processing' | 'queued' | 'queue_full';
+  message: string;
+  queue_position?: number;
+  estimated_wait_time?: string;
+}
+
+/**
+ * Defines the structure of the status response from the status endpoint.
+ */
+export interface StatusResponse {
+  request_id: string;
+  status: 'processing' | 'queued' | 'completed' | 'failed';
+  message: string;
+  queue_position?: number;
+  estimated_wait_time?: string;
+  result?: ChatResponse;
+  error?: string;
 }
 
 /**
@@ -47,13 +70,25 @@ export interface EnhancedChatResponse {
 }
 
 /**
- * Sends a question to the backend chatbot API and returns the enhanced response object.
+ * Queue status object for tracking request progress.
+ */
+export interface QueueStatus {
+  status: 'processing' | 'queued' | 'completed' | 'failed' | 'queue_full';
+  message: string;
+  queuePosition?: number;
+  estimatedWaitTime?: string;
+  result?: EnhancedChatResponse;
+  error?: string;
+}
+
+/**
+ * Sends a question to the backend chatbot API and returns the queue response.
  * @param request - The ChatRequest object containing the user's question.
- * @returns A Promise that resolves to an EnhancedChatResponse object with answer, requestId, and context.
+ * @returns A Promise that resolves to a QueueResponse object with queue status information.
  */
 export const askQuestion = async (
   request: ChatRequest
-): Promise<EnhancedChatResponse> => {
+): Promise<QueueResponse> => {
   // The endpoint for the FastAPI backend.
   const apiUrl = "https://kalpokoch-chatbotdemo.hf.space/chat";
 
@@ -74,18 +109,73 @@ export const askQuestion = async (
     }
 
     // Parse the JSON response from the API.
-    const data: ChatResponse = await res.json();
-    
-    // Return the enhanced response object with all necessary data for the frontend.
-    return {
-      answer: data.answer,
-      requestId: data.request_id,
-      context: data.context_used
-    };
+    const data: QueueResponse = await res.json();
+    return data;
 
   } catch (error) {
     console.error("An error occurred while fetching from the chat API:", error);
     // Re-throw the error to be handled by the calling component.
+    throw error;
+  }
+};
+
+/**
+ * Checks the status of a specific request using its request ID.
+ * @param requestId - The request ID to check status for.
+ * @returns A Promise that resolves to a StatusResponse object.
+ */
+export const checkRequestStatus = async (
+  requestId: string
+): Promise<StatusResponse> => {
+  const apiUrl = `https://kalpokoch-chatbotdemo.hf.space/status/${requestId}`;
+
+  try {
+    const res = await fetch(apiUrl, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!res.ok) {
+      const errorBody = await res.text();
+      console.error("Status API Error Response:", errorBody);
+      throw new Error(`Failed to check request status. Status: ${res.status}`);
+    }
+
+    const data: StatusResponse = await res.json();
+    return data;
+
+  } catch (error) {
+    console.error("An error occurred while checking request status:", error);
+    throw error;
+  }
+};
+
+/**
+ * Gets the current queue information.
+ * @returns A Promise that resolves to queue information.
+ */
+export const getQueueInfo = async (): Promise<any> => {
+  const apiUrl = "https://kalpokoch-chatbotdemo.hf.space/queue";
+
+  try {
+    const res = await fetch(apiUrl, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to get queue info. Status: ${res.status}`);
+    }
+
+    const data = await res.json();
+    return data;
+
+  } catch (error) {
+    console.error("An error occurred while fetching queue info:", error);
     throw error;
   }
 };
