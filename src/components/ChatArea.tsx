@@ -25,10 +25,10 @@ interface ChatAreaProps {
 
 const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps) => {
   const suggestions = [
-    "Help me understand delegation procedures",
-    "What are the approval limits for different roles?",
-    "Show me financial delegation guidelines",
-    "Explain procurement authority levels"
+    "How to grant joining time extensions?",
+    "What are conditions for write-offs?",
+    "Delegation for approving resignations",
+    "Limits on recruitment sanction approvals"
   ];
 
   const [input, setInput] = useState("");
