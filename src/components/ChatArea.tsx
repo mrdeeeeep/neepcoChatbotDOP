@@ -48,15 +48,27 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Clear session storage when component mounts
+  // Clear session storage and polling when component mounts/unmounts
   useEffect(() => {
     const handleBeforeUnload = () => {
       sessionStorage.clear();
+      // Clear any active polling
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+      }
     };
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
         sessionStorage.removeItem(RECENT_CHATS_KEY);
+        // Clear polling when tab becomes hidden
+        if (pollingInterval) {
+          clearInterval(pollingInterval);
+          setPollingInterval(null);
+          setCurrentRequestId(null);
+          setQueueStatus(null);
+          setLoading(false);
+        }
       }
     };
 
@@ -66,7 +78,9 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      if (pollingInterval) clearInterval(pollingInterval);
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+      }
     };
   }, [pollingInterval]);
 
@@ -138,6 +152,7 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
 
       // Stop polling if completed or failed
       if (statusResponse.status === 'completed' || statusResponse.status === 'failed') {
+        // Clear polling first to prevent multiple executions
         if (pollingInterval) {
           clearInterval(pollingInterval);
           setPollingInterval(null);
@@ -156,21 +171,43 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
             feedbackGiven: false
           };
           
-          setMessages(prev => [...prev, botMessage]);
+          // Use functional update to avoid stale state
+          setMessages(prev => {
+            // Check if this message was already added (prevent duplicates)
+            const lastMessage = prev[prev.length - 1];
+            if (lastMessage && lastMessage.sender === 'bot' && lastMessage.requestId === statusResponse.result?.request_id) {
+              return prev; // Don't add duplicate
+            }
+            return [...prev, botMessage];
+          });
         } else if (statusResponse.status === 'failed') {
           // Add error message
           const errorMessage: Message = {
             sender: 'bot',
             text: statusResponse.error || "Sorry, an error occurred while processing your request."
           };
-          setMessages(prev => [...prev, errorMessage]);
+          
+          setMessages(prev => {
+            // Check if error message was already added
+            const lastMessage = prev[prev.length - 1];
+            if (lastMessage && lastMessage.sender === 'bot' && lastMessage.text === errorMessage.text) {
+              return prev; // Don't add duplicate
+            }
+            return [...prev, errorMessage];
+          });
         }
 
         // Clear queue status after a delay
         setTimeout(() => {
           setQueueStatus(null);
         }, 2000);
+        
+        // Return true to indicate polling should stop
+        return true;
       }
+      
+      // Return false to continue polling
+      return false;
 
     } catch (error) {
       console.error('Error polling request status:', error);
@@ -179,21 +216,37 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
         ...prev,
         message: "Connection issue while checking status. Retrying..."
       } : null);
+      
+      // Return false to continue polling
+      return false;
     }
   };
 
   // Start polling for request status
   const startPolling = (requestId: string) => {
-    if (pollingInterval) clearInterval(pollingInterval);
+    // Clear any existing interval first
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      setPollingInterval(null);
+    }
     
-    const interval = setInterval(() => {
-      pollRequestStatus(requestId);
+    const interval = setInterval(async () => {
+      const shouldStop = await pollRequestStatus(requestId);
+      if (shouldStop && interval) {
+        clearInterval(interval);
+        setPollingInterval(null);
+      }
     }, 3000); // Poll every 3 seconds
     
     setPollingInterval(interval);
     
-    // Poll immediately
-    pollRequestStatus(requestId);
+    // Poll immediately (but don't wait for it to complete)
+    pollRequestStatus(requestId).then(shouldStop => {
+      if (shouldStop && interval) {
+        clearInterval(interval);
+        setPollingInterval(null);
+      }
+    });
   };
 
   // Animation variants
