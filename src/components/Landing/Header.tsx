@@ -19,11 +19,11 @@ const Header: React.FC = () => {
           <a href="#team" className="lg:pr-[2rem] text-white font-medium hover:text-gray-200 transition-colors">
             OUR TEAM
           </a>
-          <a href="#solution" className="text-white font-medium hover:text-gray-200 transition-colors">
-            WHAT IS DOP?
-          </a>
           <a href="#what-is-dop" className="text-white font-medium hover:text-gray-200 transition-colors">
             SOLUTION
+          </a>
+          <a href="#solution" className="text-white font-medium hover:text-gray-200 transition-colors">
+            WHAT IS DOP?
           </a>
           <a href="#problem" className="text-white font-medium hover:text-gray-200 transition-colors">
             PROBLEM
