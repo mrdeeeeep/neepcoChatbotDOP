@@ -12,4 +12,3 @@ This project provides the user interface for interacting with the chatbot.
 ### Prerequisites
 - Node.js (v18 or above recommended)
 - npm or bun
-
