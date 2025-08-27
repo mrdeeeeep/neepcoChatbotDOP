@@ -27,14 +27,14 @@ const Index = () => {
 
   return (
     <div className="flex h-screen w-full font-quicksand overflow-hidden">
-      <Sidebar 
+      {/* <Sidebar 
         isOpen={sidebarOpen}
         onClose={closeSidebar}
         onToggle={toggleSidebar}
         onSelectChat={handleSelectChat}
         onNewChat={handleNewChat}
         currentChatId={selectedChat?.id || null}
-      />
+      /> */}
       <ChatArea 
         onToggleSidebar={toggleSidebar}
         selectedChat={selectedChat}
