@@ -3,6 +3,7 @@ import Header from '../components/Landing/Header';
 import Hero from '../components/Landing/Hero';
 import InfoChallenge from '../components/Landing/InfoChallenge';
 import DOPSection from '@/components/Landing/DOPSection';
+import OurSolution from '@/components/Landing/OurSolution';
 
 const Landing: React.FC = () => {
   return (
@@ -12,6 +13,7 @@ const Landing: React.FC = () => {
         <Hero />
         <InfoChallenge />
         <DOPSection />
+        <OurSolution />
         {/* You can add more sections here like Problem, Solution, Team, etc. */}
       </main>
     </div>
