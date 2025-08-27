@@ -44,7 +44,7 @@ const OurTeam: React.FC = () => {
           },
           {
             name: "Theophilas Chapar",
-            githubUrl: "",
+            githubUrl: "https://github.com/Tchap123",
             linkedinUrl: "https://www.linkedin.com/in/tchapar/"
           }
         ]
