@@ -5,6 +5,7 @@ import InfoChallenge from '../components/Landing/InfoChallenge';
 import DOPSection from '@/components/Landing/DOPSection';
 import OurSolution from '@/components/Landing/OurSolution';
 import OurTeam from '@/components/Landing/OurTeam';
+import Footer from "@/components/Landing/Footer";
 
 const Landing: React.FC = () => {
   return (
@@ -27,6 +28,7 @@ const Landing: React.FC = () => {
           <OurTeam />
         </section>
       </main>
+      <Footer />
     </div>
   );
 };
