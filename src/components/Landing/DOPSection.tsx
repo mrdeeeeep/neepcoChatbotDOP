@@ -22,7 +22,7 @@ const DOPSection: React.FC = () => {
       </div>
 
       {/* Content */}
-      <div className="lg:pt-[20%] relative max-w-6xl mx-auto px-6 py-16 text-center">
+      <div className="lg:pt-80 relative max-w-7xl mx-auto px-6 py-16 text-center">
         <h2 className="text-xl md:text-4xl font-quicksand tracking-wide font-bold text-gray-900 mb-6">
           What is{" "}
           <span className="text-[#3570BD] underline decoration-2 underline-offset-4">

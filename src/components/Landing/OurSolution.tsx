@@ -54,7 +54,7 @@ const OurSolution: React.FC = () => {
   };
 
   return (
-    <section className="relative w-full lg:mt-[-10px]">
+    <section className="relative w-full lg:mt-[40px]">
       {/* Background SVG */}
       <div className="absolute inset-0 -z-10">
         <svg
