@@ -11,7 +11,7 @@ const DOPSection: React.FC = () => {
           height="1349"
           viewBox="0 0 1727 1349"
           fill="none"
-          className="w-full h-[1200px]"
+          className="w-full h-full min-h-[1200px]"
           preserveAspectRatio="none"
         >
           <path
