@@ -13,10 +13,10 @@ const Header: React.FC = () => {
   };
 
   return (
-    <header className="w-full bg-transparent absolute top-0 left-0 z-50 px-[5%] py-4 font-quicksand">
+    <header className="w-full bg-transparent absolute top-0 left-0 z-50 px-[5%] py-6 font-quicksand">
       <nav className="max-w-auto mx-auto flex items-center justify-end">
         {/* All navigation items on the right, ordered right-to-left */}
-        <div className="flex items-center lg:space-x-4 flex-row-reverse lg:text-[95%]">
+        <div className="flex items-center lg:space-x-8 flex-row-reverse lg:text-[95%]">
           {/* Live Demo Button - will appear on far right */}
           <Link 
             to="/chat" 
