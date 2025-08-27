@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { askQuestion, submitFeedback, checkRequestStatus, QueueStatus } from "../inferenceAPI";
+import NeepcoLogo from "/public/logo/neepcologo.png"
 
 const RECENT_CHATS_KEY = "recentChats";
 
@@ -469,7 +470,7 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
                     disabled={isInputDisabled}
                   />
                   <Button variant="ghost" size="sm" className="text-gray-500 hover:text-custom-red hidden md:flex" type="button">
-                    <Mic className="w-4 md:w-5 h-4 md:h-5" />
+                    {/* <Mic className="w-4 md:w-5 h-4 md:h-5" /> */}
                   </Button>
                   <Button
                     size="sm"
@@ -509,7 +510,7 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
                 >
                   <Menu className="w-5 h-5" />
                 </Button>
-                <Sparkles className="w-5 md:w-6 h-5 md:h-6 text-custom-red" />
+                <img src={NeepcoLogo} alt="NEEPCO Logo" className="w-12 h-12 rounded-lg" />
                 <span className="font-quicksand text-base md:text-lg text-custom-blue font-bold">NEEPCO Chat</span>
               </div>
               <Button
@@ -790,7 +791,7 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
                       disabled={isInputDisabled}
                     />
                     <Button variant="ghost" size="sm" className="text-gray-500 hover:text-custom-red hidden md:flex" type="button">
-                      <Mic className="w-4 md:w-5 h-4 md:h-5" />
+                      {/* <Mic className="w-4 md:w-5 h-4 md:h-5" /> */}
                     </Button>
                     <Button
                       size="sm"
