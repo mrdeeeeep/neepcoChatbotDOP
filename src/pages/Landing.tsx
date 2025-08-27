@@ -11,12 +11,21 @@ const Landing: React.FC = () => {
     <div className="min-h-screen relative">
       <Header />
       <main>
-        <Hero />
-        <InfoChallenge />
-        <DOPSection />
-        <OurSolution />
-        <OurTeam />
-        {/* You can add more sections here like Problem, Solution, Team, etc. */}
+        <section id="home">
+          <Hero />
+        </section>
+        <section id="problem">
+          <InfoChallenge />
+        </section>
+        <section id="what-is-dop">
+          <DOPSection />
+        </section>
+        <section id="solution">
+          <OurSolution />
+        </section>
+        <section id="team">
+          <OurTeam />
+        </section>
       </main>
     </div>
   );

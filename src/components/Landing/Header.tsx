@@ -2,6 +2,16 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 
 const Header: React.FC = () => {
+  const scrollToSection = (sectionId: string) => {
+    const element = document.getElementById(sectionId);
+    if (element) {
+      element.scrollIntoView({ 
+        behavior: 'smooth',
+        block: 'start'
+      });
+    }
+  };
+
   return (
     <header className="w-full bg-transparent absolute top-0 left-0 z-50 px-[5%] py-4 font-quicksand">
       <nav className="max-w-auto mx-auto flex items-center justify-end">
@@ -16,21 +26,36 @@ const Header: React.FC = () => {
           </Link>
           
           {/* Navigation Links - will appear right-to-left */}
-          <a href="#team" className="lg:pr-[2rem] text-white font-medium hover:text-gray-200 transition-colors">
+          <button 
+            onClick={() => scrollToSection('team')}
+            className="lg:pr-[2rem] text-white font-medium hover:text-gray-200 transition-colors cursor-pointer bg-transparent border-none outline-none"
+          >
             OUR TEAM
-          </a>
-          <a href="#what-is-dop" className="text-white font-medium hover:text-gray-200 transition-colors">
+          </button>
+          <button 
+            onClick={() => scrollToSection('solution')}
+            className="text-white font-medium hover:text-gray-200 transition-colors cursor-pointer bg-transparent border-none outline-none"
+          >
             SOLUTION
-          </a>
-          <a href="#solution" className="text-white font-medium hover:text-gray-200 transition-colors">
+          </button>
+          <button 
+            onClick={() => scrollToSection('what-is-dop')}
+            className="text-white font-medium hover:text-gray-200 transition-colors cursor-pointer bg-transparent border-none outline-none"
+          >
             WHAT IS DOP?
-          </a>
-          <a href="#problem" className="text-white font-medium hover:text-gray-200 transition-colors">
+          </button>
+          <button 
+            onClick={() => scrollToSection('problem')}
+            className="text-white font-medium hover:text-gray-200 transition-colors cursor-pointer bg-transparent border-none outline-none"
+          >
             PROBLEM
-          </a>
-          <Link to="/" className="text-white font-medium hover:text-gray-200 transition-colors">
+          </button>
+          <button 
+            onClick={() => scrollToSection('home')}
+            className="text-white font-medium hover:text-gray-200 transition-colors cursor-pointer bg-transparent border-none outline-none"
+          >
             HOME
-          </Link>
+          </button>
         </div>
       </nav>
     </header>
