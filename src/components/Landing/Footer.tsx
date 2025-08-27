@@ -44,7 +44,7 @@ const Footer: React.FC = () => {
             <div className="mt-4 w-20 h-auto flex items-center">
               {/* Keep href empty for now so they can be set later */}
               <a
-                href="https://github.com/mrdeeeeep/neepcoChatbotDOP"
+                href="https://github.com/kalpokoch/RAG-based-Chatbot-for-Delegation-of-power-DOP-NEEPCO"
                 aria-label="GitHub"
                 className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-neutral-800 hover:bg-neutral-700 transition"
               >
