@@ -113,7 +113,7 @@ const Sidebar = ({ isOpen, onClose, onToggle, onSelectChat, onNewChat, currentCh
         <div className="flex items-center justify-between mb-4 md:hidden">
           <div className="flex items-center">
             <img src={NeepcoLogo} alt="NEEPCO Logo" className="w-8 h-8 rounded-lg mr-2" />
-            <span className="font-quicksand font-bold text-custom-blue">NEEPCO</span>
+            <span className="font-quicksand font-bold text-custom-blue">NEEPCO</span>z
           </div>
           <Button 
             variant="ghost" 

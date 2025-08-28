@@ -472,7 +472,7 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
                   <Button variant="ghost" size="sm" className="text-gray-500 hover:text-custom-red hidden md:flex" type="button">
                     {/* <Mic className="w-4 md:w-5 h-4 md:h-5" /> */}
                   </Button>
-                  <Button
+                  {/* <Button
                     size="sm"
                     className="bg-custom-red hover:bg-custom-blue text-white rounded-xl px-3 md:px-4 disabled:opacity-50 disabled:cursor-not-allowed"
                     type="submit"
@@ -480,7 +480,7 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
                     disabled={isInputDisabled}
                   >
                     <Send className="w-4 h-4" />
-                  </Button>
+                  </Button> */}
                 </div>
               </form>
             </div>
@@ -502,14 +502,14 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
             {/* Chat Header */}
             <div className="flex items-center justify-between p-4 md:p-6 border-b border-gray-200 bg-white/80 backdrop-blur-md flex-shrink-0">
               <div className="flex items-center gap-2">
-                <Button
+                {/* <Button
                   variant="ghost"
                   size="sm"
                   className="md:hidden text-custom-blue hover:text-custom-red mr-2"
                   onClick={onToggleSidebar}
                 >
                   <Menu className="w-5 h-5" />
-                </Button>
+                </Button> */}
                 <img src={NeepcoLogo} alt="NEEPCO Logo" className="w-12 h-12 rounded-lg" />
                 <span className="font-quicksand text-base md:text-lg text-custom-blue font-bold">NEEPCO Chat</span>
               </div>
