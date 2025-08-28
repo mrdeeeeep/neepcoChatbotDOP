@@ -405,17 +405,6 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
             variants={chatVariants}
             className="flex-1 flex flex-col h-full"
           >
-            {/* Mobile Menu Button */}
-            <div className="flex justify-start p-4 md:hidden">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-custom-blue hover:text-custom-red"
-                onClick={onToggleSidebar}
-              >
-                <Menu className="w-6 h-6" />
-              </Button>
-            </div>
 
             {/* Main Content Container */}
             <div className="flex-1 flex flex-col items-center justify-center p-4 md:p-8 min-h-0">
@@ -455,9 +444,6 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
                 onSubmit={handleSubmit}
               >
                 <div className="flex items-center space-x-2 md:space-x-3">
-                  <Button variant="ghost" size="sm" className="text-gray-500 hover:text-custom-red hidden md:flex" type="button">
-                    {/* <Paperclip className="w-4 md:w-5 h-4 md:h-5" /> */}
-                  </Button>
                   <Input
                     ref={inputRef}
                     value={input}
@@ -470,9 +456,8 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
                     disabled={isInputDisabled}
                   />
                   <Button variant="ghost" size="sm" className="text-gray-500 hover:text-custom-red hidden md:flex" type="button">
-                    {/* <Mic className="w-4 md:w-5 h-4 md:h-5" /> */}
                   </Button>
-                  {/* <Button
+                  <Button
                     size="sm"
                     className="bg-custom-red hover:bg-custom-blue text-white rounded-xl px-3 md:px-4 disabled:opacity-50 disabled:cursor-not-allowed"
                     type="submit"
@@ -480,7 +465,7 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
                     disabled={isInputDisabled}
                   >
                     <Send className="w-4 h-4" />
-                  </Button> */}
+                  </Button>
                 </div>
               </form>
             </div>
