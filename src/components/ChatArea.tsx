@@ -28,7 +28,7 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
   const suggestions = [
     "How to grant joining time extensions?",
     "What are conditions for write-offs?",
-    "Delegation for approving resignations",
+    "Limited tender authorization limits?",
     "Limits on recruitment sanction approvals"
   ];
 
