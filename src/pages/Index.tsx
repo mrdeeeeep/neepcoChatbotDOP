@@ -8,6 +8,7 @@ type Message = { sender: 'user' | 'bot'; text: string };
 const Index = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedChat, setSelectedChat] = useState<RecentChat | null>(null);
+  const [pendingChatId, setPendingChatId] = useState<string | null>(null);
 
   const toggleSidebar = () => setSidebarOpen(!sidebarOpen);
   const closeSidebar = () => setSidebarOpen(false);
@@ -25,6 +26,10 @@ const Index = () => {
     // For now, the sidebar will refresh via the useEffect interval
   };
 
+  const handlePendingChange = (chatId: string | null) => {
+    setPendingChatId(chatId);
+  };
+
   return (
     <div className="flex h-screen w-full font-quicksand overflow-hidden">
       <Sidebar 
@@ -34,11 +39,13 @@ const Index = () => {
         onSelectChat={handleSelectChat}
         onNewChat={handleNewChat}
         currentChatId={selectedChat?.id || null}
+        pendingChatId={pendingChatId}
       />
       <ChatArea 
         onToggleSidebar={toggleSidebar}
         selectedChat={selectedChat}
         onChatUpdate={handleChatUpdate}
+        onPendingChange={handlePendingChange}
       />
     </div>
   );

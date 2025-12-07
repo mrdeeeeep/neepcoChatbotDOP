@@ -23,9 +23,10 @@ interface ChatAreaProps {
   onToggleSidebar: () => void;
   selectedChat: RecentChat | null;
   onChatUpdate: (chatId: string, messages: Message[]) => void;
+  onPendingChange: (chatId: string | null) => void;
 }
 
-const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps) => {
+const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate, onPendingChange }: ChatAreaProps) => {
   const suggestions = [
     "How to grant joining time extensions?",
     "What are conditions for write-offs?",
@@ -44,14 +45,15 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
 
   // Queue-related state
   const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
+  
+  // Track which chat has the pending request (for queue status display)
+  const [queueStatusChatId, setQueueStatusChatId] = useState<string | null>(null);
 
-  // ✅ Support multiple in-flight request polls without aborting earlier ones
-  const pollersRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
-  const pendingIdsRef = useRef<Set<string>>(new Set());
-  const [pendingCount, setPendingCount] = useState(0); // derived from pendingIdsRef for UI re-render
-
-  // Track which chatId each requestId belongs to
-  const requestToChatIdRef = useRef<Map<string, string>>(new Map());
+  // Single pending request tracking (only one at a time)
+  const pollerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pendingRequestIdRef = useRef<string | null>(null);
+  const pendingChatIdRef = useRef<string | null>(null);
+  const [isPending, setIsPending] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -74,19 +76,29 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      // Cleanup any remaining pollers
-      pollersRef.current.forEach((intId) => clearInterval(intId));
-      pollersRef.current.clear();
-      pendingIdsRef.current.clear();
-      setPendingCount(0);
+      // Cleanup any remaining poller
+      if (pollerRef.current) {
+        clearInterval(pollerRef.current);
+        pollerRef.current = null;
+      }
     };
   }, []);
 
-  // Load selected chat
+  // Load selected chat or reset for new chat
   useEffect(() => {
     if (selectedChat) {
       setMessages(selectedChat.messages);
       setChatId(selectedChat.id);
+    } else {
+      // New chat - reset all state
+      setMessages([]);
+      setChatId(null);
+      setShowFeedback({});
+      setFeedbackData({});
+      setQueueStatus(null);
+      setQueueStatusChatId(null);
+      setError(null);
+      setLoading(false);
     }
   }, [selectedChat]);
 
@@ -124,23 +136,21 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
     onChatUpdate(chatId, messages);
   }, [messages, chatId, onChatUpdate]);
 
-  // --- Polling helpers for multiple IDs ---
-  const addPendingId = (id: string) => {
-    pendingIdsRef.current.add(id);
-    setPendingCount(pendingIdsRef.current.size);
-  };
-
-  const removePendingId = (id: string) => {
-    pendingIdsRef.current.delete(id);
-    setPendingCount(pendingIdsRef.current.size);
-  };
-
-  const clearPoller = (id: string) => {
-    const intId = pollersRef.current.get(id);
-    if (intId) {
-      clearInterval(intId);
-      pollersRef.current.delete(id);
+  // Clear poller helper
+  const clearCurrentPoller = () => {
+    if (pollerRef.current) {
+      clearInterval(pollerRef.current);
+      pollerRef.current = null;
     }
+  };
+
+  // Clear pending state helper
+  const clearPendingState = () => {
+    clearCurrentPoller();
+    pendingRequestIdRef.current = null;
+    pendingChatIdRef.current = null;
+    setIsPending(false);
+    onPendingChange(null);
   };
 
   // Helper to update a specific chat in sessionStorage
@@ -166,13 +176,15 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
     }
   };
 
-  // Polling function for checking request status (per requestId)
-  const pollRequestStatus = async (requestId: string) => {
+  // Polling function for checking request status
+  const pollRequestStatus = async () => {
+    const requestId = pendingRequestIdRef.current;
+    const originalChatId = pendingChatIdRef.current;
+    
+    if (!requestId || !originalChatId) return true; // stop polling
+    
     try {
       const statusResponse = await checkRequestStatus(requestId);
-      
-      // Get the original chatId this request belongs to
-      const originalChatId = requestToChatIdRef.current.get(requestId);
 
       const newQueueStatus: QueueStatus = {
         status: statusResponse.status,
@@ -196,14 +208,8 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
         setQueueStatus(newQueueStatus);
       }
 
-      // Stop polling if completed or failed — ONLY for this requestId
+      // Stop polling if completed or failed
       if (statusResponse.status === 'completed' || statusResponse.status === 'failed') {
-        clearPoller(requestId);
-        removePendingId(requestId);
-        
-        // Clean up the request-to-chat mapping
-        requestToChatIdRef.current.delete(requestId);
-
         if (statusResponse.status === 'completed' && statusResponse.result) {
           // Add bot response to messages
           const botMessage: Message = {
@@ -224,7 +230,7 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
               }
               return [...prev, botMessage];
             });
-          } else if (originalChatId) {
+          } else {
             // User switched chats - update the original chat in sessionStorage
             updateChatInStorage(originalChatId, botMessage);
           }
@@ -241,50 +247,59 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
               if (last && last.sender === 'bot' && last.text === errorMessage.text) return prev;
               return [...prev, errorMessage];
             });
-          } else if (originalChatId) {
+          } else {
             // User switched chats - update the original chat in sessionStorage
             updateChatInStorage(originalChatId, errorMessage);
           }
         }
 
-        // Clear queue status after a brief delay if nothing else is pending
+        // Clear pending state
+        clearPendingState();
+        
+        // Clear queue status after a brief delay
         setTimeout(() => {
-          if (pendingIdsRef.current.size === 0) setQueueStatus(null);
+          setQueueStatus(null);
+          setQueueStatusChatId(null);
         }, 2000);
 
-        return true; // stop for this id
+        return true; // stop polling
       }
 
       return false; // continue polling
     } catch (error) {
       console.error('Error polling request status:', error);
-      // continue polling but update status message
-      setQueueStatus(prev => prev ? { ...prev, message: "Connection issue while checking status. Retrying..." } : null);
+      // continue polling but update status message only if on same chat
+      if (currentChatIdRef.current === originalChatId) {
+        setQueueStatus(prev => prev ? { ...prev, message: "Connection issue while checking status. Retrying..." } : null);
+      }
       return false;
     }
   };
 
-  // Start polling for a specific requestId without cancelling others
+  // Start polling for a request
   const startPolling = (requestId: string, forChatId: string) => {
-    // Store the mapping of requestId to chatId
-    requestToChatIdRef.current.set(requestId, forChatId);
+    // Clear any existing poller
+    clearCurrentPoller();
     
-    // Ensure we don't create duplicate intervals per id
-    clearPoller(requestId);
-    addPendingId(requestId);
+    // Set pending state
+    pendingRequestIdRef.current = requestId;
+    pendingChatIdRef.current = forChatId;
+    setIsPending(true);
+    setQueueStatusChatId(forChatId);
+    onPendingChange(forChatId);
 
     const interval = setInterval(async () => {
-      const shouldStop = await pollRequestStatus(requestId);
+      const shouldStop = await pollRequestStatus();
       if (shouldStop) {
-        clearPoller(requestId);
+        clearCurrentPoller();
       }
     }, 3000);
 
-    pollersRef.current.set(requestId, interval);
+    pollerRef.current = interval;
 
-    // Kick off an immediate poll once
-    void pollRequestStatus(requestId).then((shouldStop) => {
-      if (shouldStop) clearPoller(requestId);
+    // Kick off an immediate poll
+    void pollRequestStatus().then((shouldStop) => {
+      if (shouldStop) clearCurrentPoller();
     });
   };
 
@@ -366,6 +381,12 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
 
   // Submit helpers (shared for manual text and suggestions)
   const enqueueQuestion = async (question: string) => {
+    // Block if there's already a pending request
+    if (isPending) {
+      setError("Please wait for the current request to complete.");
+      return;
+    }
+    
     let newChatId = chatId;
     if (!chatId) {
       newChatId = Date.now().toString();
@@ -377,6 +398,7 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
     setMessages(newMessages);
     setLoading(true);
     setError(null);
+    setQueueStatusChatId(newChatId);
 
     // keep focus snappy
     setTimeout(() => inputRef.current?.focus(), 200);
@@ -387,10 +409,9 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
     try {
       const queueResponse = await askQuestion({ question });
 
-      // Track this requestId until it completes (do NOT replace others)
       const reqId = queueResponse.request_id;
 
-      // Set initial queue status UI (last one wins visually)
+      // Set initial queue status UI
       const initialStatus: QueueStatus = {
         status: queueResponse.status,
         message: queueResponse.message,
@@ -404,18 +425,20 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
         // Remove the user message since request failed
         setMessages(prev => prev.slice(0, -1));
         setError("Queue is full. Please try again later.");
-        // clear status after a short delay (no pending)
+        setQueueStatusChatId(null);
+        // clear status after a short delay
         setTimeout(() => setQueueStatus(null), 4000);
         return;
       }
 
-      // begin polling for this id, passing the chatId it belongs to
+      // begin polling for this request
       startPolling(reqId, newChatId!);
 
     } catch (err: any) {
       console.error('API Error:', err);
       setLoading(false);
       setQueueStatus(null);
+      setQueueStatusChatId(null);
       setError("Failed to get response. Please try again.");
 
       // Add a single deduplicated bot error message
@@ -426,7 +449,6 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
         return [...prev, { sender: 'bot' as const, text: msgText }];
       });
     } finally {
-      // If at least one request is pending, keep input disabled; otherwise allow typing again
       setLoading(false);
     }
   };
@@ -435,8 +457,8 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
   const handleSubmit = async (e?: React.FormEvent | React.KeyboardEvent) => {
     if (e) e.preventDefault();
     if (!input.trim()) return;
-    // Block if any requests are still pending
-    if (pendingIdsRef.current.size > 0) return;
+    // Block if a request is still pending
+    if (isPending) return;
 
     const currentInput = input;
     setInput("");
@@ -445,7 +467,7 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
 
   // Handle suggestion click
   const handleSuggestion = async (s: string) => {
-    if (pendingIdsRef.current.size > 0) return;
+    if (isPending) return;
     await enqueueQuestion(s);
   };
 
@@ -455,8 +477,11 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
       .replace(/\n/g, '<br/>');
   };
 
-  const showChat = messages.length > 0 || queueStatus !== null;
-  const isInputDisabled = loading || pendingCount > 0; // disable when any request is pending
+  // Only show queue status if we're on the chat that has the pending request
+  const shouldShowQueueStatus = queueStatus !== null && queueStatusChatId === chatId;
+  
+  const showChat = messages.length > 0 || shouldShowQueueStatus;
+  const isInputDisabled = loading || isPending; // disable when a request is pending
 
   return (
     <div className="flex-1 flex flex-col h-full bg-gray-50 relative">
@@ -573,11 +598,9 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
                   setShowFeedback({});
                   setFeedbackData({});
                   setQueueStatus(null);
-                  // Clear all pollers/pending safely
-                  pollersRef.current.forEach((id) => clearInterval(id));
-                  pollersRef.current.clear();
-                  pendingIdsRef.current.clear();
-                  setPendingCount(0);
+                  setQueueStatusChatId(null);
+                  // Clear pending request safely
+                  clearPendingState();
                   setLoading(false);
                 }}
               >
@@ -759,8 +782,8 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
                     </motion.div>
                   ))}
 
-                  {/* Queue Status Display */}
-                  {queueStatus && (
+                  {/* Queue Status Display - only show in the chat where request was made */}
+                  {shouldShowQueueStatus && (
                     <motion.div
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -769,35 +792,35 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
                       <div className="max-w-[75%] md:max-w-[70%] bg-blue-50 text-blue-800 rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm border border-blue-200 font-quicksand text-sm md:text-base">
                         <div className="flex items-start space-x-3">
                           <div className="flex-shrink-0">
-                            {queueStatus.status === 'processing' ? (
+                            {queueStatus!.status === 'processing' ? (
                               <div className="flex space-x-1 mt-1">
                                 <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
                                 <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
                                 <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
                               </div>
-                            ) : queueStatus.status === 'queued' ? (
+                            ) : queueStatus!.status === 'queued' ? (
                               <Clock className="w-5 h-5 text-blue-600 mt-0.5" />
-                            ) : queueStatus.status === 'queue_full' ? (
+                            ) : queueStatus!.status === 'queue_full' ? (
                               <Users className="w-5 h-5 text-red-600 mt-0.5" />
                             ) : null}
                           </div>
 
                           <div className="flex-1">
                             <div className="font-medium mb-1">
-                              {queueStatus.status === 'processing' && 'Processing your request...'}
-                              {queueStatus.status === 'queued' && 'Request queued'}
-                              {queueStatus.status === 'queue_full' && 'Queue full'}
+                              {queueStatus!.status === 'processing' && 'Processing your request...'}
+                              {queueStatus!.status === 'queued' && 'Request queued'}
+                              {queueStatus!.status === 'queue_full' && 'Queue full'}
                             </div>
 
                             <div className="text-sm text-blue-700">
-                              {queueStatus.message}
+                              {queueStatus!.message}
                             </div>
 
-                            {queueStatus.queuePosition && queueStatus.queuePosition > 0 && (
+                            {queueStatus!.queuePosition && queueStatus!.queuePosition > 0 && (
                               <div className="text-sm text-blue-600 mt-2 flex items-center space-x-4">
-                                <span>Position: #{queueStatus.queuePosition}</span>
-                                {queueStatus.estimatedWaitTime && (
-                                  <span>Est. wait: {queueStatus.estimatedWaitTime}</span>
+                                <span>Position: #{queueStatus!.queuePosition}</span>
+                                {queueStatus!.estimatedWaitTime && (
+                                  <span>Est. wait: {queueStatus!.estimatedWaitTime}</span>
                                 )}
                               </div>
                             )}

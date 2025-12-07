@@ -1,4 +1,4 @@
-import { MessageSquare, Search, FileText, X, Menu } from "lucide-react";
+import { MessageSquare, FileText, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useEffect, useState } from "react";
 import ServerStatus from "./ServerStatus";
@@ -22,9 +22,10 @@ interface SidebarProps {
   onSelectChat: (chat: RecentChat) => void;
   onNewChat: () => void;
   currentChatId: string | null;
+  pendingChatId: string | null;
 }
 
-const Sidebar = ({ isOpen, onClose, onToggle, onSelectChat, onNewChat, currentChatId }: SidebarProps) => {
+const Sidebar = ({ isOpen, onClose, onToggle, onSelectChat, onNewChat, currentChatId, pendingChatId }: SidebarProps) => {
   const [recentChats, setRecentChats] = useState<RecentChat[]>([]);
 
   // Load chats from sessionStorage
@@ -135,11 +136,6 @@ const Sidebar = ({ isOpen, onClose, onToggle, onSelectChat, onNewChat, currentCh
             <MessageSquare className="w-4 h-4 mr-3" />
             New Chat
           </Button>
-          
-          <Button variant="ghost" className="w-full justify-start text-custom-blue hover:text-custom-red hover:bg-custom-blue/10 font-quicksand text-sm md:text-base" size="sm">
-            <Search className="w-4 h-4 mr-3" />
-            Search Chats
-          </Button>
         </div>
 
         {/* Recent Chats */}
@@ -155,11 +151,14 @@ const Sidebar = ({ isOpen, onClose, onToggle, onSelectChat, onNewChat, currentCh
                   variant="ghost"
                   className={`w-full justify-start text-custom-blue hover:text-custom-red hover:bg-custom-blue/10 font-quicksand text-xs md:text-sm h-auto py-2 ${
                     currentChatId === chat.id ? 'bg-custom-blue/10 text-custom-red' : ''
-                  }`}
+                  } ${pendingChatId === chat.id ? 'animate-pulse' : ''}`}
                   onClick={() => handleSelectChat(chat)}
                 >
-                  <FileText className="w-4 h-4 mr-3 flex-shrink-0" />
+                  <FileText className={`w-4 h-4 mr-3 flex-shrink-0 ${pendingChatId === chat.id ? 'text-custom-red' : ''}`} />
                   <span className="truncate text-left">{chat.title}</span>
+                  {pendingChatId === chat.id && (
+                    <span className="ml-auto w-2 h-2 bg-custom-red rounded-full animate-pulse" />
+                  )}
                 </Button>
               ))
             )}
