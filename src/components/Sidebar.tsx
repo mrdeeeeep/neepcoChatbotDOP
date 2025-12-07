@@ -1,7 +1,9 @@
 import { MessageSquare, Search, FileText, X, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useEffect, useState } from "react";
-import NeepcoLogo from "/public/logo/neepcologo.png"
+import ServerStatus from "./ServerStatus";
+
+const NeepcoLogo = "/logo/neepcologo.png";
 
 const RECENT_CHATS_KEY = "recentChats";
 type RecentChat = { id: string; title: string; messages: Message[] };
@@ -38,22 +40,15 @@ const Sidebar = ({ isOpen, onClose, onToggle, onSelectChat, onNewChat, currentCh
       }
     }
 
+    // Clear chats only when tab/window is closed (not when switching tabs)
     const handleBeforeUnload = () => {
       sessionStorage.removeItem(RECENT_CHATS_KEY);
     };
 
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        sessionStorage.removeItem(RECENT_CHATS_KEY);
-      }
-    };
-
     window.addEventListener('beforeunload', handleBeforeUnload);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 
@@ -169,6 +164,11 @@ const Sidebar = ({ isOpen, onClose, onToggle, onSelectChat, onNewChat, currentCh
               ))
             )}
           </div>
+        </div>
+
+        {/* Server Status */}
+        <div className="pt-4 mt-4 border-t border-custom-blue/20">
+          <ServerStatus />
         </div>
       </div>
     </>

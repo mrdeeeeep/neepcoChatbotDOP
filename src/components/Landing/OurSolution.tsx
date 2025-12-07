@@ -1,5 +1,6 @@
 import React from "react";
-import Airplane from "/public/landing/paperairplane.svg"
+
+const Airplane = "/landing/paperairplane.svg";
 
 // TypeScript interfaces
 interface TimelineItem {

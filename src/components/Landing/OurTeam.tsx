@@ -1,8 +1,10 @@
 import React from "react";
-import ProfileIcon from "/public/landing/ProfileIcons.svg";
-import FemaleProfileIcon from "/public/landing/FemaleProfileIcon.svg";
-import GitHubIcon from "/public/landing/GitHub.png";
-import LinkedInIcon from "/public/landing/Linkedin.png";
+
+// Use direct URL paths for public assets
+const ProfileIcon = "/landing/ProfileIcons.svg";
+const FemaleProfileIcon = "/landing/FemaleProfileIcon.svg";
+const GitHubIcon = "/landing/GitHub.png";
+const LinkedInIcon = "/landing/Linkedin.png";
 
 // TypeScript interfaces
 interface TeamMember {

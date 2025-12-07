@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { askQuestion, submitFeedback, checkRequestStatus, QueueStatus } from "../inferenceAPI";
-import NeepcoLogo from "/public/logo/neepcologo.png"
+
+const NeepcoLogo = "/logo/neepcologo.png";
 
 const RECENT_CHATS_KEY = "recentChats";
 
@@ -319,6 +320,9 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
     // keep focus snappy
     setTimeout(() => inputRef.current?.focus(), 200);
 
+    // Dispatch event to trigger server wake-up status in sidebar
+    window.dispatchEvent(new CustomEvent("serverWakeUp"));
+
     try {
       const queueResponse = await askQuestion({ question });
 
@@ -487,15 +491,16 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
             {/* Chat Header */}
             <div className="flex items-center justify-between p-4 md:p-6 border-b border-gray-200 bg-white/80 backdrop-blur-md flex-shrink-0">
               <div className="flex items-center gap-2">
-                {/* <Button
+                <Button
                   variant="ghost"
                   size="sm"
                   className="md:hidden text-custom-blue hover:text-custom-red mr-2"
                   onClick={onToggleSidebar}
                 >
                   <Menu className="w-5 h-5" />
-                </Button> */}
-                <img src={NeepcoLogo} alt="NEEPCO Logo" className="w-12 h-12 rounded-lg" />
+                </Button>
+                {/* Logo only visible on mobile when sidebar is hidden */}
+                <img src={NeepcoLogo} alt="NEEPCO Logo" className="w-10 h-10 rounded-lg md:hidden" />
                 <span className="font-quicksand text-base md:text-lg text-custom-blue font-bold">NEEPCO Chat</span>
               </div>
               <Button
