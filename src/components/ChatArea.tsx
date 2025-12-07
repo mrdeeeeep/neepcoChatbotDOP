@@ -50,8 +50,19 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
   const pendingIdsRef = useRef<Set<string>>(new Set());
   const [pendingCount, setPendingCount] = useState(0); // derived from pendingIdsRef for UI re-render
 
+  // Track which chatId each requestId belongs to
+  const requestToChatIdRef = useRef<Map<string, string>>(new Map());
+
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  // Ref to track current chatId for use in polling callbacks
+  const currentChatIdRef = useRef<string | null>(null);
+  
+  // Keep currentChatIdRef in sync with chatId state
+  useEffect(() => {
+    currentChatIdRef.current = chatId;
+  }, [chatId]);
 
   // Clear session storage when tab closes
   useEffect(() => {
@@ -132,10 +143,36 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
     }
   };
 
+  // Helper to update a specific chat in sessionStorage
+  const updateChatInStorage = (targetChatId: string, botMessage: Message) => {
+    const stored = sessionStorage.getItem(RECENT_CHATS_KEY);
+    if (!stored) return;
+    
+    try {
+      const chats: RecentChat[] = JSON.parse(stored);
+      const idx = chats.findIndex(c => c.id === targetChatId);
+      
+      if (idx !== -1) {
+        // Check for duplicate
+        const lastMsg = chats[idx].messages[chats[idx].messages.length - 1];
+        if (lastMsg && lastMsg.sender === 'bot' && lastMsg.requestId === botMessage.requestId) {
+          return; // Already added
+        }
+        chats[idx].messages.push(botMessage);
+        sessionStorage.setItem(RECENT_CHATS_KEY, JSON.stringify(chats));
+      }
+    } catch (error) {
+      console.error('Error updating chat in storage:', error);
+    }
+  };
+
   // Polling function for checking request status (per requestId)
   const pollRequestStatus = async (requestId: string) => {
     try {
       const statusResponse = await checkRequestStatus(requestId);
+      
+      // Get the original chatId this request belongs to
+      const originalChatId = requestToChatIdRef.current.get(requestId);
 
       const newQueueStatus: QueueStatus = {
         status: statusResponse.status,
@@ -154,13 +191,18 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
         };
       }
 
-      // For UI we show the most recent status message
-      setQueueStatus(newQueueStatus);
+      // Only update queue status UI if we're still on the same chat
+      if (currentChatIdRef.current === originalChatId) {
+        setQueueStatus(newQueueStatus);
+      }
 
       // Stop polling if completed or failed — ONLY for this requestId
       if (statusResponse.status === 'completed' || statusResponse.status === 'failed') {
         clearPoller(requestId);
         removePendingId(requestId);
+        
+        // Clean up the request-to-chat mapping
+        requestToChatIdRef.current.delete(requestId);
 
         if (statusResponse.status === 'completed' && statusResponse.result) {
           // Add bot response to messages
@@ -172,21 +214,37 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
             feedbackGiven: false
           };
 
-          setMessages(prev => {
-            const lastMessage = prev[prev.length - 1];
-            if (lastMessage && lastMessage.sender === 'bot' && lastMessage.requestId === statusResponse.result?.request_id) {
-              return prev; // avoid duplicate
-            }
-            return [...prev, botMessage];
-          });
+          // Check if we're still on the same chat
+          if (currentChatIdRef.current === originalChatId) {
+            // Update current messages state
+            setMessages(prev => {
+              const lastMessage = prev[prev.length - 1];
+              if (lastMessage && lastMessage.sender === 'bot' && lastMessage.requestId === statusResponse.result?.request_id) {
+                return prev; // avoid duplicate
+              }
+              return [...prev, botMessage];
+            });
+          } else if (originalChatId) {
+            // User switched chats - update the original chat in sessionStorage
+            updateChatInStorage(originalChatId, botMessage);
+          }
         } else if (statusResponse.status === 'failed') {
-          // Add error message (dedupe similar errors)
-          setMessages(prev => {
-            const last = prev[prev.length - 1];
-            const msgText = statusResponse.error || "Sorry, an error occurred while processing your request.";
-            if (last && last.sender === 'bot' && last.text === msgText) return prev;
-            return [...prev, { sender: 'bot', text: msgText }];
-          });
+          const errorMessage: Message = {
+            sender: 'bot',
+            text: statusResponse.error || "Sorry, an error occurred while processing your request."
+          };
+          
+          // Check if we're still on the same chat
+          if (currentChatIdRef.current === originalChatId) {
+            setMessages(prev => {
+              const last = prev[prev.length - 1];
+              if (last && last.sender === 'bot' && last.text === errorMessage.text) return prev;
+              return [...prev, errorMessage];
+            });
+          } else if (originalChatId) {
+            // User switched chats - update the original chat in sessionStorage
+            updateChatInStorage(originalChatId, errorMessage);
+          }
         }
 
         // Clear queue status after a brief delay if nothing else is pending
@@ -207,7 +265,10 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
   };
 
   // Start polling for a specific requestId without cancelling others
-  const startPolling = (requestId: string) => {
+  const startPolling = (requestId: string, forChatId: string) => {
+    // Store the mapping of requestId to chatId
+    requestToChatIdRef.current.set(requestId, forChatId);
+    
     // Ensure we don't create duplicate intervals per id
     clearPoller(requestId);
     addPendingId(requestId);
@@ -348,8 +409,8 @@ const ChatArea = ({ onToggleSidebar, selectedChat, onChatUpdate }: ChatAreaProps
         return;
       }
 
-      // begin polling for this id
-      startPolling(reqId);
+      // begin polling for this id, passing the chatId it belongs to
+      startPolling(reqId, newChatId!);
 
     } catch (err: any) {
       console.error('API Error:', err);
