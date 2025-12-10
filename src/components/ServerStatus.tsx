@@ -115,7 +115,7 @@ const ServerStatus = ({ className = "" }: ServerStatusProps) => {
       case "online":
         return "Server Online";
       case "sleeping":
-        return "Server Sleeping";
+        return "Server Sleeping(Send a query to wake)";
       case "waking":
         return "Server Starting...";
       default:
